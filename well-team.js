@@ -16,9 +16,25 @@ const getAppInfo = async (guid_app) => {
     return Promise.resolve({ app_token })
 }
 
-const getAuthInfo = async (username, password, app_token, iyes_url) => {
+const getCompanyInfo = async (app_token, iyes_url) => {
     const result = await request({
-        url: `https://inforyouwebgw.teamsystem.com/api/v1/security/authenticate?login=${username}&password=${password}&companyid=2`,
+        url: `https://inforyouwebgw.teamsystem.com/api/v1/webcompany/list`,
+        json: true,
+        headers: {
+            'AppToken': app_token,
+            'IYESUrl': iyes_url
+        }
+    })
+    if (result.Items.length > 0) {
+        return Promise.resolve({ companyID: result.Items[0].ID })
+    } else {
+        return Promise.reject(`nessun companyID trovato`)
+    }
+}
+
+const getAuthInfo = async (username, password, app_token, iyes_url, companyID) => {
+    const result = await request({
+        url: `https://inforyouwebgw.teamsystem.com/api/v1/security/authenticate?login=${username}&password=${password}&companyid=${companyID}`,
         json: true,
         headers: {
             'AppToken': app_token,
@@ -29,8 +45,9 @@ const getAuthInfo = async (username, password, app_token, iyes_url) => {
     return Promise.resolve({ auth_token })
 }
 
-const getLessonInfo = async (app_token, auth_token, iyes_url, lessonDay, lessonName, startTime, endTime) => {
+const getLessonInfo = async (app_token, auth_token, iyes_url, companyID, lessonDay, lessonName, startTime, endTime) => {
     const lessonDayString = lessonDay.format('YYYY-MM-DDT')
+    console.log(lessonDayString)
     const result = await request({
         method: 'POST',
         url: `https://inforyouwebgw.teamsystem.com/api/v1/webbooking/listwithmine`,
@@ -41,13 +58,16 @@ const getLessonInfo = async (app_token, auth_token, iyes_url, lessonDay, lessonN
             'AuthToken': auth_token
         },
         body: {
-            "CompanyID": 2,
-            "EndDate": `${lessonDayString}23:59:59`,
+            "CompanyID": `${companyID}`,
+            "EndDate": `${lessonDayString}23:30:00`,
             "StartDate": `${lessonDayString}00:00:00`,
             "TimeEnd": `${lessonDayString}${endTime}`,
-            "TimeStart": `${lessonDayString}${startTime}`
+            "TimeStart": `${lessonDayString}${startTime}`,
+            "Types": []
         }
     })
+
+    console.log(result)
 
     if (!result.Items || result.Items.length <= 0) return Promise.reject(`nessuna lezione trovata il ${lessonDay.format("dddd")} dalle ${startTime} alle ${endTime}`)
     const myLesson = result.Items.filter(elem => elem.ServiceDescription === lessonName)[0]
@@ -99,27 +119,27 @@ const cancelLesson = async (app_token, auth_token, iyes_url, lessonDay, lessonID
     return Promise.resolve({ comment: result.Comment })
 }
 
-const book = async (username, password, dayNumber, lessonName, startTime, endTime) => {
+const book = async (username, password, lessonDay, lessonName, startTime, endTime) => {
 
     const { guid_app, iyes_url } = await getGymInfo()
     const { app_token } = await getAppInfo(guid_app)
-    const { auth_token } = await getAuthInfo(username, password, app_token, iyes_url)
+    const { companyID } = await getCompanyInfo(app_token, iyes_url)
+    const { auth_token } = await getAuthInfo(username, password, app_token, iyes_url, companyID)
 
-    const lessonDay = moment().isoWeekday(dayNumber)
-    const { serviceID, lessonID } = await getLessonInfo(app_token, auth_token, iyes_url, lessonDay, lessonName, startTime, endTime)
+    const { serviceID, lessonID } = await getLessonInfo(app_token, auth_token, iyes_url, companyID, lessonDay, lessonName, startTime, endTime)
 
     const { comment } = await bookLesson(app_token, auth_token, iyes_url, lessonDay, lessonID, serviceID, startTime, endTime)
     return Promise.resolve(comment)
 }
 
-const cancel = async (username, password, dayNumber, lessonName, startTime, endTime) => {
+const cancel = async (username, password, lessonDay, lessonName, startTime, endTime) => {
 
     const { guid_app, iyes_url } = await getGymInfo()
     const { app_token } = await getAppInfo(guid_app)
-    const { auth_token } = await getAuthInfo(username, password, app_token, iyes_url)
+    const { companyID } = await getCompanyInfo(app_token, iyes_url)
+    const { auth_token } = await getAuthInfo(username, password, app_token, iyes_url, companyID)
 
-    const lessonDay = moment().isoWeekday(dayNumber)
-    const { serviceID, lessonID } = await getLessonInfo(app_token, auth_token, iyes_url, lessonDay, lessonName, startTime, endTime)
+    const { serviceID, lessonID } = await getLessonInfo(app_token, auth_token, iyes_url, companyID, lessonDay, lessonName, startTime, endTime)
 
     const { comment } = await cancelLesson(app_token, auth_token, iyes_url, lessonDay, lessonID, serviceID, startTime, endTime)
     return Promise.resolve(comment)

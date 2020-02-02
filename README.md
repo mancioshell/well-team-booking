@@ -21,7 +21,7 @@ Create a file config.json in your project directory.
 book a new lesson
 
 ```
-node index.js --action cancel --lesson "cross training" --day giovedi --start-time 19:00 --end-time 20:00
+node index.js --action book --lesson "cross training" --day giovedi --start-time 19:00 --end-time 20:00
 ```
 
 cancel a booked lesson
