@@ -1,7 +1,7 @@
 ## Install
 
 ```
-npm install
+npm install well-team-client
 ```
 
 ## Configuration
@@ -21,11 +21,11 @@ Create a file config.json in your project directory.
 book a new lesson
 
 ```
-node index.js --action book --lesson "cross training" --day giovedi --start-time 19:00 --end-time 20:00
+npx well-team-client --action book --lesson "cross training" --day tue --start-time 19:00 --end-time 20:00
 ```
 
 cancel a booked lesson
 
 ```
-node index.js --action cancel --lesson "cross training" --day giovedi --start-time 19:00 --end-time 20:00
+npx well-team-client --action cancel --lesson "cross training" --day tue --start-time 19:00 --end-time 20:00
 ```

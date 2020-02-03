@@ -1,34 +1,155 @@
-const fs = require('fs');
-const path = require('path');
-const configPath = path.join(process.cwd(), 'config.json')
-const config = require(configPath)
-const argv = require('yargs').argv
+const request = require('request-promise-native');
 const moment = require('moment')
-moment.locale('it')
+moment.locale('en')
 
-const TIME_REGEX = /^(1[0-9]|2[0-4]|0[1-9]):[0-5][0-9]$/
-const DAY_OF_WEEK = ['lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato', 'domenica']
+const getGymInfo = async () => {
+    const result = await request({ url: `https://inforyoumobile.teamsystem.com/api/v1/search?code=dailytraining`, json: true })
 
-if (!TIME_REGEX.test(argv.startTime)) throw new Error(`il formato dell'ora del parametro start-time non è valido`)
-if (!TIME_REGEX.test(argv.endTime)) throw new Error(`il formato dell'ora del parametro end-time non è valido`)
+    const guid_app = result.Item.guid_app
+    const iyes_url = result.Item.iyes_url
+    return Promise.resolve({ guid_app, iyes_url })
+}
 
-if (!DAY_OF_WEEK.includes(argv.day)) throw new Error(`il parametro day deve essere uno dei seguenti valori: ${DAY_OF_WEEK}`)
+const getAppInfo = async (guid_app) => {
+    const result = await request({ url: `http://iyes.inforyou.it/v1/token/${guid_app}`, json: true })
+    const app_token = result.Item
+    return Promise.resolve({ app_token })
+}
 
-const wellTeam = require('./well-team')(config)
+const getCompanyInfo = async (app_token, iyes_url) => {
+    const result = await request({
+        url: `https://inforyouwebgw.teamsystem.com/api/v1/webcompany/list`,
+        json: true,
+        headers: {
+            'AppToken': app_token,
+            'IYESUrl': iyes_url
+        }
+    })
+    if (result.Items.length > 0) {
+        return Promise.resolve({ companyID: result.Items[0].ID })
+    } else {
+        return Promise.reject(`no companyID found`)
+    }
+}
 
-const day = moment().day(argv.day).day()
-const lessonDay = moment().day(day)
+const getAuthInfo = async (username, password, app_token, iyes_url, companyID) => {
+    const result = await request({
+        url: `https://inforyouwebgw.teamsystem.com/api/v1/security/authenticate?login=${username}&password=${password}&companyid=${companyID}`,
+        json: true,
+        headers: {
+            'AppToken': app_token,
+            'IYESUrl': iyes_url
+        }
+    })
+    const auth_token = result.Item
+    return Promise.resolve({ auth_token })
+}
 
-const startTime = `${argv.startTime}:00`
-const endTime = `${argv.endTime}:00`
+const getLessonInfo = async (app_token, auth_token, iyes_url, companyID, lessonDay, lessonName, startTime, endTime) => {
+    const lessonDayString = lessonDay.format('YYYY-MM-DDT')
+    const result = await request({
+        method: 'POST',
+        url: `https://inforyouwebgw.teamsystem.com/api/v1/webbooking/listwithmine`,
+        json: true,
+        headers: {
+            'AppToken': app_token,
+            'IYESUrl': iyes_url,
+            'AuthToken': auth_token
+        },
+        body: {
+            "CompanyID": `${companyID}`,
+            "EndDate": `${lessonDayString}23:30:00`,
+            "StartDate": `${lessonDayString}00:00:00`,
+            "TimeEnd": `${lessonDayString}${endTime}`,
+            "TimeStart": `${lessonDayString}${startTime}`,
+            "Types": []
+        }
+    })
 
-switch (argv.action) {
-    case "book":       
-        wellTeam.book(lessonDay, argv.lesson.toUpperCase(), startTime, endTime).then(console.log).catch(error => console.error(`error: ${error}`))
-        break;
-    case "cancel":
-        wellTeam.cancel(lessonDay, argv.lesson.toUpperCase(), startTime, endTime).then(console.log).catch(error => console.error(`error: ${error}`))
-        break;
-    default:
-        console.log(`devi specificare un'azione con i seguenti valori: [book, cancel], ma hai specificato il seguente valore: ${argv.action}`)
-} 
+    if (!result.Items || result.Items.length <= 0) return Promise.reject(`no lesson found the ${lessonDay.format("dddd")} which starts at ${startTime} and end at ${endTime}`)
+    const myLesson = result.Items.filter(elem => elem.ServiceDescription === lessonName)[0]
+    if (!myLesson) return Promise.reject(`no lesson found with name: ${lessonName}`)
+    return Promise.resolve({ serviceID: myLesson.IDServizio, lessonID: myLesson.IDLesson })
+}
+
+const bookLesson = async (app_token, auth_token, iyes_url, lessonDay, lessonID, serviceID, startTime, endTime) => {
+    const lessonDayString = lessonDay.format('YYYY-MM-DDT')
+    const result = await request({
+        method: 'POST',
+        json: true,
+        body: {
+            "EndTime": `${lessonDayString}${endTime}`,
+            "StartTime": `${lessonDayString}${startTime}`,
+            "IDLesson": lessonID,
+            "BookingID": serviceID
+        },
+        url: `https://inforyouwebgw.teamsystem.com/api/v1/webbooking/book`,
+        headers: {
+            'AppToken': app_token,
+            'IYESUrl': iyes_url,
+            'AuthToken': auth_token
+        }
+    })
+    return Promise.resolve({ comment: result.Comment })
+}
+
+
+const cancelLesson = async (app_token, auth_token, iyes_url, lessonDay, lessonID, serviceID, startTime, endTime) => {
+    const lessonDayString = lessonDay.format('YYYY-MM-DDT')
+    const result = await request({
+        method: 'POST',
+        json: true,
+        body: {
+            "EndTime": `${lessonDayString}${endTime}`,
+            "StartTime": `${lessonDayString}${startTime}`,
+            "IDLesson": lessonID,
+            "BookingID": serviceID
+        },
+        url: `https://inforyouwebgw.teamsystem.com/api/v1/webbooking/cancel`,
+        headers: {
+            'AppToken': app_token,
+            'IYESUrl': iyes_url,
+            'AuthToken': auth_token
+        }
+    })
+
+    return Promise.resolve({ comment: result.Comment })
+}
+
+const book = async (username, password, lessonDay, lessonName, startTime, endTime) => {
+
+    const { guid_app, iyes_url } = await getGymInfo()
+    const { app_token } = await getAppInfo(guid_app)
+    const { companyID } = await getCompanyInfo(app_token, iyes_url)
+    const { auth_token } = await getAuthInfo(username, password, app_token, iyes_url, companyID)
+
+    const { serviceID, lessonID } = await getLessonInfo(app_token, auth_token, iyes_url, companyID, lessonDay, lessonName, startTime, endTime)
+
+    const { comment } = await bookLesson(app_token, auth_token, iyes_url, lessonDay, lessonID, serviceID, startTime, endTime)
+    return Promise.resolve(comment)
+}
+
+const cancel = async (username, password, lessonDay, lessonName, startTime, endTime) => {
+
+    const { guid_app, iyes_url } = await getGymInfo()
+    const { app_token } = await getAppInfo(guid_app)
+    const { companyID } = await getCompanyInfo(app_token, iyes_url)
+    const { auth_token } = await getAuthInfo(username, password, app_token, iyes_url, companyID)
+
+    const { serviceID, lessonID } = await getLessonInfo(app_token, auth_token, iyes_url, companyID, lessonDay, lessonName, startTime, endTime)
+
+    const { comment } = await cancelLesson(app_token, auth_token, iyes_url, lessonDay, lessonID, serviceID, startTime, endTime)
+    return Promise.resolve(comment)
+}
+
+module.exports = (config) => {
+    let { username, password } = config
+
+    if (!username) throw new Error("username is required")
+    if (!password) throw new Error('password is required')
+
+    return {
+        book: async (dayNumber, lessonName, startTime, endTime) => book.call(this, username, password, dayNumber, lessonName, startTime, endTime),
+        cancel: async (dayNumber, lessonName, startTime, endTime) => cancel.call(this, username, password, dayNumber, lessonName, startTime, endTime)
+    }
+}
