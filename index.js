@@ -52,7 +52,7 @@ const getAuthInfo = async (username, password, app_token, iyes_url, companyID) =
 
 const getLessonInfo = async (app_token, auth_token, iyes_url, companyID, lessonDay, lessonName, startTime, endTime) => {
     const lessonDayString = lessonDay.format('YYYY-MM-DDT')
-    
+
     const result = await request({
         method: 'POST',
         url: `https://inforyouwebgw.teamsystem.com/api/v1/webbooking/listwithmine`,
@@ -71,13 +71,36 @@ const getLessonInfo = async (app_token, auth_token, iyes_url, companyID, lessonD
             "Types": []
         }
     })
-    
+
     if (!result.Successful) return Promise.reject(result.Comment)
 
     if (!result.Items || result.Items.length <= 0) return Promise.reject(`no lesson found the ${lessonDay.format("dddd")} which starts at ${startTime} and end at ${endTime}`)
     const myLesson = result.Items.filter(elem => elem.ServiceDescription === lessonName)[0]
     if (!myLesson) return Promise.reject(`no lesson found with name: ${lessonName}`)
     return Promise.resolve({ serviceID: myLesson.IDServizio, lessonID: myLesson.IDLesson })
+}
+
+const getLessons = async (app_token, iyes_url, companyID) => {
+
+    const result = await request({
+        method: 'GET',
+        url: `https://inforyouwebgw.teamsystem.com/api/v1/webbooking/services?companyID=${companyID}`,
+        json: true,
+        headers: {
+            'AppToken': app_token,
+            'IYESUrl': iyes_url,
+
+        }
+    })
+
+    if (!result.Successful) return Promise.reject(result.Comment)
+
+    if (!result.Items || result.Items.length <= 0) return Promise.reject(`no lesson found the ${lessonDay.format("dddd")} which starts at ${startTime} and end at ${endTime}`)
+    const lessons = result.Items
+        .map(item => item.Tipologies.length > 0 ? item.Tipologies : item)
+        .reduce((curr, next) => Array.isArray(next) ? curr.concat(...next) : curr.concat(next))
+        .map(({Description, Category, ...rest}) => ({Description, Category}))
+    return Promise.resolve({ lessons: lessons })
 }
 
 const bookLesson = async (app_token, auth_token, iyes_url, lessonDay, lessonID, serviceID, startTime, endTime) => {
@@ -150,7 +173,20 @@ const cancel = async (username, password, lessonDay, lessonName, startTime, endT
     const { serviceID, lessonID } = await getLessonInfo(app_token, auth_token, iyes_url, companyID, lessonDay, lessonName, startTime, endTime)
 
     const { comment } = await cancelLesson(app_token, auth_token, iyes_url, lessonDay, lessonID, serviceID, startTime, endTime)
+
     return Promise.resolve(comment)
+}
+
+const lessons = async (username, password) => {
+
+    const { guid_app, iyes_url } = await getGymInfo()
+    const { app_token } = await getAppInfo(guid_app)
+    const { companyID } = await getCompanyInfo(app_token, iyes_url)
+    const { auth_token } = await getAuthInfo(username, password, app_token, iyes_url, companyID)
+
+    const { lessons } = await getLessons(app_token, iyes_url, companyID)
+
+    return Promise.resolve(lessons)
 }
 
 module.exports = (config) => {
@@ -161,6 +197,7 @@ module.exports = (config) => {
 
     return {
         book: async (dayNumber, lessonName, startTime, endTime) => book.call(this, username, password, dayNumber, lessonName, startTime, endTime),
-        cancel: async (dayNumber, lessonName, startTime, endTime) => cancel.call(this, username, password, dayNumber, lessonName, startTime, endTime)
+        cancel: async (dayNumber, lessonName, startTime, endTime) => cancel.call(this, username, password, dayNumber, lessonName, startTime, endTime),
+        lessons: async () => lessons.call(this, username, password)
     }
 }

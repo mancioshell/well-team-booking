@@ -22,7 +22,7 @@ WIDE_DAY_OF_WEEK = {
 }
 
 const commangArgs = (yargs) => {
-    return yargs        
+    return yargs
         .option('username', {
             alias: 'u',
             describe: 'Your DailyTraining username',
@@ -73,6 +73,7 @@ const commangArgs = (yargs) => {
 const argv = require('yargs')
     .command('book', 'Book a lesson on DailyTraining', commangArgs)
     .command('cancel', 'Cancel an already booked lesson on DailyTraining', commangArgs)
+    .command('lessons', 'Cancel an already booked lesson on DailyTraining')
     .demandCommand()
     .help()
     .locale('en')
@@ -85,18 +86,22 @@ try {
         const config = fs.existsSync(configPath) ? require(configPath) : { username: argv.username, password: argv.password }
 
         const wellTeam = wellTeamClient(config)
-        if (!TIME_REGEX.test(argv.startTime)) throw new Error(`start-time parameter should be in HH:MM format`)
-        if (!TIME_REGEX.test(argv.endTime)) throw new Error(`end-time parameter should be in HH:MM format`)
 
-        if (!argv.day && !argv.date) throw new Error(`day or date parameter is mandatory`)
+        let startTime = null, endTime = null, lessonDay = null
 
-        if (argv.day && !DAY_OF_WEEK.includes(argv.day)) throw new Error(`day parameter should be one of : ${DAY_OF_WEEK}`)
-        if (argv.date && !DATE_REGEX.test(argv.date)) throw new Error(`date parameter should be in YYYY-MM-DD format`)
+        if (argv._ != 'lessons') {
+            if (!TIME_REGEX.test(argv.startTime)) throw new Error(`start-time parameter should be in HH:MM format`)
+            if (!TIME_REGEX.test(argv.endTime)) throw new Error(`end-time parameter should be in HH:MM format`)
 
-        const lessonDay = argv.date ? moment(argv.date) : moment().day(moment().day(WIDE_DAY_OF_WEEK[argv.day]).day())
+            startTime = `${argv.startTime}:00`
+            endTime = `${argv.endTime}:00`
 
-        const startTime = `${argv.startTime}:00`
-        const endTime = `${argv.endTime}:00`
+            if (!argv.day && !argv.date) throw new Error(`day or date parameter is mandatory`)
+            if (argv.day && !DAY_OF_WEEK.includes(argv.day)) throw new Error(`day parameter should be one of : ${DAY_OF_WEEK}`)
+            if (argv.date && !DATE_REGEX.test(argv.date)) throw new Error(`date parameter should be in YYYY-MM-DD format`)
+
+            lessonDay = argv.date ? moment(argv.date) : moment().day(moment().day(WIDE_DAY_OF_WEEK[argv.day]).day())
+        }
 
         wellTeam[argv._](lessonDay, argv.lesson, startTime, endTime).then(console.log).catch(error => console.error(`error: ${error}`))
 
