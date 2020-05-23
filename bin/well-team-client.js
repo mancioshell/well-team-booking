@@ -49,13 +49,13 @@ const commangArgs = (yargs) => {
             type: 'string'
         })
         .option('day', {
-            alias: 'd',
+            alias: 'dow',
             describe: 'Day of week of your lesson',
             choices: DAY_OF_WEEK,
             type: 'string'
         })
         .option('date', {
-            alias: 'dd',
+            alias: 'd',
             describe: 'Lesson Date in YYYY-MM-DD format'
         })
         .option('start-time', {
@@ -103,7 +103,9 @@ try {
             lessonDay = argv.date ? moment(argv.date) : moment().day(moment().day(WIDE_DAY_OF_WEEK[argv.day]).day())
         }
 
-        wellTeam[argv._](lessonDay, argv.lesson, startTime, endTime).then(console.log).catch(error => console.error(`error: ${error}`))
+        wellTeam[argv._](lessonDay, argv.lesson, startTime, endTime)
+            .then(argv._ != 'lessons' ? console.log : console.table)
+            .catch(error => console.error(`error: ${error}`))
 
     } else {
         console.log('file config.json does not exist')

@@ -80,26 +80,43 @@ const getLessonInfo = async (app_token, auth_token, iyes_url, companyID, lessonD
     return Promise.resolve({ serviceID: myLesson.IDServizio, lessonID: myLesson.IDLesson })
 }
 
-const getLessons = async (app_token, iyes_url, companyID) => {
+const getLessons = async (app_token, auth_token, iyes_url, companyID) => {
+
+    const today = moment().format('YYYY-MM-DDT')
+    const nextWeek = moment().add(1, 'weeks').format('YYYY-MM-DDT')
 
     const result = await request({
-        method: 'GET',
-        url: `https://inforyouwebgw.teamsystem.com/api/v1/webbooking/services?companyID=${companyID}`,
+        method: 'POST',
+        url: `https://inforyouwebgw.teamsystem.com/api/v1/webbooking/listwithmine`,
         json: true,
         headers: {
             'AppToken': app_token,
             'IYESUrl': iyes_url,
-
+            'AuthToken': auth_token
+        },
+        body: {
+            "CompanyID": `${companyID}`,
+            "EndDate": `${nextWeek}23:30:00`,
+            "StartDate": `${today}00:00:00`,
+            "TimeEnd": `${today}23:30:00`,
+            "TimeStart": `${today}06:00:00`,
+            "Types": []
         }
     })
 
     if (!result.Successful) return Promise.reject(result.Comment)
 
-    if (!result.Items || result.Items.length <= 0) return Promise.reject(`no lesson found the ${lessonDay.format("dddd")} which starts at ${startTime} and end at ${endTime}`)
+    if (!result.Items || result.Items.length <= 0) return Promise.reject(`no lessons found for this week`)
     const lessons = result.Items
-        .map(item => item.Tipologies.length > 0 ? item.Tipologies : item)
-        .reduce((curr, next) => Array.isArray(next) ? curr.concat(...next) : curr.concat(next))
-        .map(({Description, Category, ...rest}) => ({Description, Category}))
+        .map(({ ServiceDescription, CategoryDescription, DateLesson, StartTime, EndTime, AvailablePlaces }) =>
+            ({
+                description: ServiceDescription,
+                category: CategoryDescription,
+                data: moment(DateLesson).format("DD/MM/YYYY"),
+                startTime: moment(StartTime).format("HH:mm"),
+                endTime: moment(EndTime).format("HH:mm"),
+                availablePlaces: AvailablePlaces
+            }))
     return Promise.resolve({ lessons: lessons })
 }
 
@@ -184,7 +201,7 @@ const lessons = async (username, password) => {
     const { companyID } = await getCompanyInfo(app_token, iyes_url)
     const { auth_token } = await getAuthInfo(username, password, app_token, iyes_url, companyID)
 
-    const { lessons } = await getLessons(app_token, iyes_url, companyID)
+    const { lessons } = await getLessons(app_token, auth_token, iyes_url, companyID)
 
     return Promise.resolve(lessons)
 }
